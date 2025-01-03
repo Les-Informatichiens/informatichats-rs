@@ -9,3 +9,7 @@ moq-native = { workspace = true }
 tokio = { workspace = true}
 anyhow = { workspace = true }
 ffmpeg-next = { version="7.1.0", features=["codec", "format"]}
+eframe = "0.30.0"
+env_logger = "0.11.6"
+rfd = "0.15.2"
+log = "0.4.22"

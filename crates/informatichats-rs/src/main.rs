@@ -1,10 +1,14 @@
+use eframe::egui;
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::ffi::{avcodec_alloc_context3, AVInputFormat};
 use ffmpeg_next::format::open_with;
 use ffmpeg_next::sys::av_find_input_format;
 use ffmpeg_next::{Dictionary, Format};
+use informatichat::Informatichat;
 use std::ffi::CString;
 use std::path::Path;
+
+mod informatichat;
 
 fn record_screen(output_file: &str, duration: u64) -> Result<(), ffmpeg::Error> {
     // Initialize FFmpeg
@@ -44,7 +48,10 @@ fn record_screen(output_file: &str, duration: u64) -> Result<(), ffmpeg::Error> 
 
     // Add a video stream to the output
     let codec = ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264).unwrap();
-    let global_header = octx.format().flags().contains(ffmpeg::format::flag::Flags::GLOBAL_HEADER);
+    let global_header = octx
+        .format()
+        .flags()
+        .contains(ffmpeg::format::flag::Flags::GLOBAL_HEADER);
 
     // let decoder = ffmpeg::codec::decoder::find(ffmpeg::codec::Id::H264).unwrap().decoder().unwrap().video().unwrap();
     let mut stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
@@ -53,14 +60,15 @@ fn record_screen(output_file: &str, duration: u64) -> Result<(), ffmpeg::Error> 
     let enc = ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264).unwrap();
     let mut ost = octx.add_stream(enc)?;
     // let mut _ = octx.add_stream(codec)?;
-    let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters()).unwrap()
+    let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
+        .unwrap()
         .decoder()
-        .video().unwrap();
+        .video()
+        .unwrap();
 
-    let mut encoder =
-        ffmpeg::codec::context::Context::new_with_codec(enc)
-            .encoder()
-            .video()?;
+    let mut encoder = ffmpeg::codec::context::Context::new_with_codec(enc)
+        .encoder()
+        .video()?;
     encoder.set_width(1920);
     encoder.set_height(1080);
     encoder.set_time_base((1, 30));
@@ -70,9 +78,8 @@ fn record_screen(output_file: &str, duration: u64) -> Result<(), ffmpeg::Error> 
     if global_header {
         encoder.set_flags(ffmpeg::codec::flag::Flags::GLOBAL_HEADER);
     }
-         let opened_encoder = encoder.open().unwrap();
+    let opened_encoder = encoder.open().unwrap();
     ost.set_parameters(&opened_encoder);
-
 
     // ost.set_time_base((1, 30));
 
@@ -89,8 +96,7 @@ fn record_screen(output_file: &str, duration: u64) -> Result<(), ffmpeg::Error> 
     // Capture and encode frames
     while ffmpeg::time::relative() - start_time < duration as i64 {
         if let Ok(()) = packet.read(&mut input) {
-           packet.write(&mut octx).unwrap();
-
+            packet.write(&mut octx).unwrap();
         }
     }
 
@@ -99,12 +105,25 @@ fn record_screen(output_file: &str, duration: u64) -> Result<(), ffmpeg::Error> 
     Ok(())
 }
 
-fn main() {
-    let output_file = "screen_record.mp4";
-    let duration = 10; // Record for 10 seconds
+fn main() -> eframe::Result {
+    //let output_file = "screen_record.mp4";
+    //let duration = 10; // Record for 10 seconds
 
-    match record_screen(output_file, duration) {
-        Ok(_) => println!("Screen recording saved to {}", output_file),
-        Err(e) => eprintln!("Error recording screen: {:?}", e),
-    }
+    //match record_screen(output_file, duration) {
+    //    Ok(_) => println!("Screen recording saved to {}", output_file),
+    //    Err(e) => eprintln!("Error recording screen: {:?}", e),
+    //}
+
+    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
+        ..Default::default()
+    };
+
+    eframe::run_native(
+        "Informatichat",
+        options,
+        Box::new(|_cc| Ok(Box::new(Informatichat::new()))),
+    )
 }
