@@ -1,0 +1,18 @@
+[workspace]
+# Try
+# require version 2 to avoid "feature" additiveness for dev-dependencies
+# https://doc.rust-lang.org/cargo/reference/resolver.html#feature-resolver-version-2
+resolver = "2"
+
+members = ["crates/*"]
+
+
+[workspace.dependencies]
+moq-transfork = { version = "0.8.0" }
+moq-native = { version = "0.5.10" }
+tokio = "1.42.0"
+anyhow = "1.0.95"
+tracing = "0.1.41"
+
+[profile.dev]
+debug = 0 # Speed up compilation time and not necessary.

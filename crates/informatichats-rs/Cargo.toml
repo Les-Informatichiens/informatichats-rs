@@ -1,0 +1,11 @@
+[package]
+name = "informatichats-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+moq-transfork = { workspace = true }
+moq-native = { workspace = true }
+tokio = { workspace = true}
+anyhow = { workspace = true }
+ffmpeg-next = { version="7.1.0", features=["codec", "format"]}
