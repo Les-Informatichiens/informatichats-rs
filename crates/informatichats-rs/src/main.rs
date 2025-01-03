@@ -47,30 +47,33 @@ fn record_screen(output_file: &str, duration: u64) -> Result<(), ffmpeg::Error> 
     let global_header = octx.format().flags().contains(ffmpeg::format::flag::Flags::GLOBAL_HEADER);
 
     // let decoder = ffmpeg::codec::decoder::find(ffmpeg::codec::Id::H264).unwrap().decoder().unwrap().video().unwrap();
+    let mut stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+    let video_stream_index = stream.index();
 
-    let mut stream = octx.add_stream(codec)?;
+    let enc = ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264).unwrap();
+    let mut ost = octx.add_stream(enc)?;
+    // let mut _ = octx.add_stream(codec)?;
     let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters()).unwrap()
         .decoder()
         .video().unwrap();
-    {
-        let mut encoder =
-            unsafe { ffmpeg::codec::context::Context::wrap(avcodec_alloc_context3(codec.as_ptr()), None) }
-                .encoder()
-                .video()
-                .unwrap();
-        encoder.set_width(1920);
-        encoder.set_height(1080);
-        encoder.set_time_base((1, 30));
-        encoder.set_frame_rate(Some((30, 1)));
-        encoder.set_bit_rate(4000 * 1000);
-        encoder.set_format(ffmpeg::format::Pixel::YUV420P);
-        if global_header {
-            encoder.set_flags(ffmpeg::codec::flag::Flags::GLOBAL_HEADER);
-        }
-             encoder.open().unwrap();
-    }
 
-    // let mut ost = octx.add_stream(codec).unwrap();
+    let mut encoder =
+        ffmpeg::codec::context::Context::new_with_codec(enc)
+            .encoder()
+            .video()?;
+    encoder.set_width(1920);
+    encoder.set_height(1080);
+    encoder.set_time_base((1, 30));
+    encoder.set_frame_rate(Some((30, 1)));
+    encoder.set_bit_rate(4000 * 1000);
+    encoder.set_format(ffmpeg::format::Pixel::YUV420P);
+    if global_header {
+        encoder.set_flags(ffmpeg::codec::flag::Flags::GLOBAL_HEADER);
+    }
+         let opened_encoder = encoder.open().unwrap();
+    ost.set_parameters(&opened_encoder);
+
+
     // ost.set_time_base((1, 30));
 
     // let mut encoder = ost.codec().encoder().video()?;
@@ -86,18 +89,18 @@ fn record_screen(output_file: &str, duration: u64) -> Result<(), ffmpeg::Error> 
     // Capture and encode frames
     while ffmpeg::time::relative() - start_time < duration as i64 {
         if let Ok(()) = packet.read(&mut input) {
-            decoder.send_packet(&packet)?;
+           packet.write(&mut octx).unwrap();
 
         }
     }
 
     // Write the trailer and clean up
-    octx.write_trailer()?;
+    // octx.write_trailer()?;
     Ok(())
 }
 
 fn main() {
-    let output_file = "screen_record.bmp";
+    let output_file = "screen_record.mp4";
     let duration = 10; // Record for 10 seconds
 
     match record_screen(output_file, duration) {
