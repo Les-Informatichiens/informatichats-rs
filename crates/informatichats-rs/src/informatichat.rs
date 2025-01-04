@@ -1,8 +1,8 @@
 use eframe::egui;
-use ffmpeg_next as ffmpeg;
 use log::{error, info};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use crate::ffmpeg;
 
 pub(crate) struct Informatichat {
     picked_path: Option<String>,
@@ -42,7 +42,7 @@ impl Informatichat {
         });
     }
 
-    pub(crate) fn record() -> Result<(), ffmpeg::Error> {
+    pub(crate) fn record() -> Result<(), Box<dyn std::error::Error>> {
         info!("Recording has started");
 
         // Replace this with actual FFmpeg recording logic
