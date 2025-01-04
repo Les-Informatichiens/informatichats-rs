@@ -1,13 +1,21 @@
+use eframe::egui;
 use ffmpeg_next as ffmpeg;
-use ffmpeg_next::ffi::{avcodec_alloc_context3, AVInputFormat, AVPixelFormat};
+use ffmpeg_next::ffi::{avcodec_alloc_context3, AVInputFormat};
+use ffmpeg_next::format::open_with;
 use ffmpeg_next::sys::av_find_input_format;
 use ffmpeg_next::{Dictionary, Format};
-use std::ffi::{c_int, CString};
+use informatichat::Informatichat;
+use std::ffi::CString;
 use std::path::Path;
-use ffmpeg_next::format::Pixel;
 
-fn find_screen_grab_input_format() -> ffmpeg::format::Input {
-    unsafe {
+mod informatichat;
+
+fn record_screen(output_file: &str, duration: u64) -> Result<(), ffmpeg::Error> {
+    // Initialize FFmpeg
+    ffmpeg::init()?;
+
+    // Define the input format (e.g., gdigrab for Windows, x11grab for Linux)
+    let input_format = unsafe {
         #[cfg(target_os = "linux")]
         let fmt_type = CString::new("x11grab").unwrap();
         #[cfg(target_os = "windows")]
@@ -15,122 +23,107 @@ fn find_screen_grab_input_format() -> ffmpeg::format::Input {
 
         let fmt = av_find_input_format(fmt_type.as_ptr());
         ffmpeg::format::Input::wrap(fmt as *mut AVInputFormat)
-    }
-}
-
-fn get_screen_grab_input_context(
-    input_format: ffmpeg::format::Input,
-    options: Option<Dictionary>,
-) -> ffmpeg::format::context::Context {
-    #[cfg(target_os = "linux")]
-    return ffmpeg::format::open_with(
-        ":0.0",
-        &Format::Input(input_format),
-        options.unwrap_or(Dictionary::new()),
-    )
-    .unwrap();
-    #[cfg(target_os = "windows")]
-    return open_with(
-        "desktop",
-        &Format::Input(input_format),
-        options.unwrap_or(Dictionary::new()),
-    )
-    .unwrap();
-}
-
-fn print_stream_parameters(stream: &ffmpeg::Stream) {
-    let params = unsafe { *stream.parameters().as_ptr() };
-    println!("Stream parameters for: {:?}", stream);
-    println!("  Codec type: {:?}", params.codec_type);
-    println!("  Codec ID: {:?}", params.codec_id);
-    println!("  Bit rate: {:?}", params.bit_rate);
-    println!("  Width: {:?}", params.width);
-    println!("  Height: {:?}", params.height);
-    println!("  Sample rate: {:?}", params.sample_rate);
-    println!("  Channels: {:?}", params.channels);
-    println!("  Frame rate: {:?}", params.framerate);
-    println!("  Pixel format: {:?}", unsafe { std::mem::transmute::<c_int, AVPixelFormat>(params.format) });
-    println!();
-}
-
-fn record_screen
-
-fn record_screen(output_file: &str, duration: u64) -> Result<(), ffmpeg::Error> {
-    // Initialize FFmpeg
-    ffmpeg::init()?;
-    ffmpeg::log::set_level(ffmpeg::log::Level::Verbose);
-
-    // Define the input format (e.g., gdigrab for Windows, x11grab for Linux)
-    let input_format = find_screen_grab_input_format();
+    };
 
     let mut options = Dictionary::new();
-    options.set("probesize", "5000000");
-    options.set("analyzeduration", "5000000");
-    options.set("framerate", "30");
-    options.set("video_size", "1920x1080");
+    options.set("probesize", "5000000"); // Increase probesize
+    options.set("analyzeduration", "5000000"); // Increase analyzeduration
 
     // Set up the input context
-    let ictx = get_screen_grab_input_context(input_format, Some(options));
-    let mut input = ictx.input();
+    #[cfg(target_os = "linux")]
+    let ictx = open_with(":0.0", &Format::Input(input_format), options).unwrap();
+    #[cfg(target_os = "windows")]
+    let ictx = open_with("desktop", &Format::Input(input_format), options).unwrap();
 
-    println!(
-        "Available input streams: {:?}",
-        input.streams().collect::<Vec<_>>()
-    );
-    let mut stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
-    println!("Best video stream: {:?}", stream);
-    print_stream_parameters(&stream);
-
-    // Setup the output context
     let mut octx = ffmpeg::format::output(Path::new(output_file)).unwrap();
     ffmpeg::format::context::output::dump(&octx, 0, Some(&output_file));
+    // octx.write_header().unwrap();
 
-    // Create encoder
-    let encoder = ffmpeg::encoder::find(ffmpeg::codec::Id::H264).unwrap();
-    let mut encoder_ctx =
-        ffmpeg::codec::context::Context::new_with_codec(encoder)
-            .encoder()
-            .video()?;
-    let stream_params = unsafe { *stream.parameters().as_ptr() };
-    encoder_ctx.set_width(stream_params.width as u32);
-    encoder_ctx.set_height(stream_params.height as u32);
-    encoder_ctx.set_time_base(stream.time_base());
-    encoder_ctx.set_format(unsafe { Pixel::from(std::mem::transmute::<c_int, AVPixelFormat>(stream_params.format)) });
-    
-    let opened_encoder_ctx = encoder_ctx.open().unwrap();
-    
-    //Create decoder
-    // let decoder = ffmpeg::decoder::find(ffmpeg::codec::Id::H264).unwrap();
-    // let mut decoder_ctx =
-    //     ffmpeg::codec::context::Context::new_with_codec(decoder)
-    //         .decoder()
-    //         .video()?;
-    // decoder_ctx.
-    // decoder_ctx.set_width(stream_params.width as u32);
-    // decoder_ctx.set_height(stream_params.height as u32);
-    // decoder_ctx.set_time_base(stream.time_base());
-    // decoder_ctx.set_format(unsafe { Pixel::from(std::mem::transmute::<c_int, AVPixelFormat>(stream_params.format)) });
+    let mut input = ictx.input();
 
+    ffmpeg::log::set_level(ffmpeg::log::Level::Verbose);
+
+    // Set up the output context
+    // let mut output = octx.format();
+
+    // Add a video stream to the output
+    let codec = ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264).unwrap();
+    let global_header = octx
+        .format()
+        .flags()
+        .contains(ffmpeg::format::flag::Flags::GLOBAL_HEADER);
+
+    // let decoder = ffmpeg::codec::decoder::find(ffmpeg::codec::Id::H264).unwrap().decoder().unwrap().video().unwrap();
+    let mut stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+    let video_stream_index = stream.index();
+
+    let enc = ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264).unwrap();
+    let mut ost = octx.add_stream(enc)?;
+    // let mut _ = octx.add_stream(codec)?;
+    let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
+        .unwrap()
+        .decoder()
+        .video()
+        .unwrap();
+
+    let mut encoder = ffmpeg::codec::context::Context::new_with_codec(enc)
+        .encoder()
+        .video()?;
+    encoder.set_width(1920);
+    encoder.set_height(1080);
+    encoder.set_time_base((1, 30));
+    encoder.set_frame_rate(Some((30, 1)));
+    encoder.set_bit_rate(4000 * 1000);
+    encoder.set_format(ffmpeg::format::Pixel::YUV420P);
+    if global_header {
+        encoder.set_flags(ffmpeg::codec::flag::Flags::GLOBAL_HEADER);
+    }
+    let opened_encoder = encoder.open().unwrap();
+    ost.set_parameters(&opened_encoder);
+
+    // ost.set_time_base((1, 30));
+
+    // let mut encoder = ost.codec().encoder().video()?;
+    // encoder.set_height(720);
+    // encoder.set_width(1280);
+    // encoder.set_format(ffmpeg::format::Pixel::YUV420P);
+    // encoder.set_time_base((1, 30));
 
     let mut packet = ffmpeg::Packet::empty();
     let mut frame = ffmpeg::frame::Video::empty();
     let start_time = ffmpeg::time::relative();
 
     // Capture and encode frames
-    packet.read(&mut input).expect("Should be able to read packet");
-    
+    while ffmpeg::time::relative() - start_time < duration as i64 {
+        if let Ok(()) = packet.read(&mut input) {
+            packet.write(&mut octx).unwrap();
+        }
+    }
 
     // Write the trailer and clean up
     // octx.write_trailer()?;
     Ok(())
 }
 
-fn main() {
-    let output_file = "screen_record.bmp";
-    let duration = 10; // Record for 10 seconds
+fn main() -> eframe::Result {
+    //let output_file = "screen_record.mp4";
+    //let duration = 10; // Record for 10 seconds
 
-    match record_screen(output_file, duration) {
-        Ok(_) => println!("Screen recording saved to {}", output_file),
-        Err(e) => eprintln!("Error recording screen: {:?}", e),
-    }
+    //match record_screen(output_file, duration) {
+    //    Ok(_) => println!("Screen recording saved to {}", output_file),
+    //    Err(e) => eprintln!("Error recording screen: {:?}", e),
+    //}
+
+    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
+        ..Default::default()
+    };
+
+    eframe::run_native(
+        "Informatichat",
+        options,
+        Box::new(|_cc| Ok(Box::new(Informatichat::new()))),
+    )
 }
